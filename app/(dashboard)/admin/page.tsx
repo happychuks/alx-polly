@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/card";
 import { deletePoll } from "@/app/lib/actions/poll-actions";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/app/lib/context/auth-context";
+import { useRouter } from "next/navigation";
 
 interface Poll {
   id: string;
@@ -21,13 +23,28 @@ interface Poll {
 }
 
 export default function AdminPage() {
+  const { user, loading: authLoading } = useAuth();
+  const router = useRouter();
   const [polls, setPolls] = useState<Poll[]>([]);
   const [loading, setLoading] = useState(true);
   const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
 
+  // Check if user is admin (you should implement proper role-based access)
+  const isAdmin = user?.email === process.env.NEXT_PUBLIC_ADMIN_EMAIL;
+
   useEffect(() => {
-    fetchAllPolls();
-  }, []);
+    if (!authLoading) {
+      if (!user) {
+        router.push('/login');
+        return;
+      }
+      if (!isAdmin) {
+        router.push('/polls');
+        return;
+      }
+      fetchAllPolls();
+    }
+  }, [user, authLoading, isAdmin, router]);
 
   const fetchAllPolls = async () => {
     const supabase = createClient();
@@ -54,8 +71,16 @@ export default function AdminPage() {
     setDeleteLoading(null);
   };
 
-  if (loading) {
-    return <div className="p-6">Loading all polls...</div>;
+  if (authLoading || loading) {
+    return <div className="p-6">Loading...</div>;
+  }
+
+  if (!user) {
+    return <div className="p-6">Redirecting to login...</div>;
+  }
+
+  if (!isAdmin) {
+    return <div className="p-6">Access denied. Admin privileges required.</div>;
   }
 
   return (
@@ -77,20 +102,11 @@ export default function AdminPage() {
                   <CardDescription>
                     <div className="space-y-1 mt-2">
                       <div>
-                        Poll ID:{" "}
-                        <code className="bg-gray-100 px-2 py-1 rounded text-sm font-mono">
-                          {poll.id}
-                        </code>
-                      </div>
-                      <div>
-                        Owner ID:{" "}
-                        <code className="bg-gray-100 px-2 py-1 rounded text-sm font-mono">
-                          {poll.user_id}
-                        </code>
-                      </div>
-                      <div>
                         Created:{" "}
                         {new Date(poll.created_at).toLocaleDateString()}
+                      </div>
+                      <div>
+                        Options: {poll.options.length}
                       </div>
                     </div>
                   </CardDescription>
