@@ -6,16 +6,25 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
+/**
+ * Form component for creating new polls
+ * Handles dynamic option management and form submission
+ * @returns JSX form element with poll creation functionality
+ */
 export default function PollCreateForm() {
   const [options, setOptions] = useState(["", ""]);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  // Update specific option by index while preserving other options
   const handleOptionChange = (idx: number, value: string) => {
     setOptions((opts) => opts.map((opt, i) => (i === idx ? value : opt)));
   };
 
+  // Add new empty option to the options array
   const addOption = () => setOptions((opts) => [...opts, ""]);
+  
+  // Remove option by index, but maintain minimum of 2 options
   const removeOption = (idx: number) => {
     if (options.length > 2) {
       setOptions((opts) => opts.filter((_, i) => i !== idx));
@@ -25,13 +34,17 @@ export default function PollCreateForm() {
   return (
     <form
       action={async (formData) => {
+        // Reset UI state before form submission
         setError(null);
         setSuccess(false);
+        
+        // Submit form data to server action
         const res = await createPoll(formData);
         if (res?.error) {
           setError(res.error);
         } else {
           setSuccess(true);
+          // Redirect to polls page after successful creation
           setTimeout(() => {
             window.location.href = "/polls";
           }, 1200);
