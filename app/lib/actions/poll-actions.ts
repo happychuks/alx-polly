@@ -3,11 +3,21 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath } from "next/cache";
 
-// Input validation and sanitization utilities
+/**
+ * Sanitizes user input by removing potentially dangerous characters
+ * @param input - The input string to sanitize
+ * @returns Sanitized string with HTML tags removed and trimmed
+ */
 function sanitizeInput(input: string): string {
   return input.trim().replace(/[<>]/g, '');
 }
 
+/**
+ * Validates poll input data for security and business logic compliance
+ * @param question - The poll question text
+ * @param options - Array of poll option strings
+ * @returns Validation result with success status and optional error message
+ */
 function validatePollInput(question: string, options: string[]): { isValid: boolean; error?: string } {
   if (!question || question.length < 3) {
     return { isValid: false, error: "Question must be at least 3 characters long." };
@@ -37,20 +47,26 @@ function validatePollInput(question: string, options: string[]): { isValid: bool
   return { isValid: true };
 }
 
-// CREATE POLL
+/**
+ * Creates a new poll with the provided question and options
+ * Validates user authentication, input data, and sanitizes content
+ * @param formData - Form data containing poll question and options
+ * @returns Promise resolving to success/error result
+ */
 export async function createPoll(formData: FormData) {
   const supabase = await createClient();
 
+  // Extract and sanitize form data to prevent XSS attacks
   const question = sanitizeInput(formData.get("question") as string);
   const options = formData.getAll("options").filter(Boolean).map(opt => sanitizeInput(opt as string));
 
-  // Validate input
+  // Validate input against business rules and security requirements
   const validation = validatePollInput(question, options);
   if (!validation.isValid) {
     return { error: validation.error };
   }
 
-  // Get user from session
+  // Verify user authentication before allowing poll creation
   const {
     data: { user },
     error: userError,
@@ -78,7 +94,10 @@ export async function createPoll(formData: FormData) {
   return { error: null };
 }
 
-// GET USER POLLS
+/**
+ * Retrieves all polls created by the currently authenticated user
+ * @returns Promise resolving to user's polls array and error status
+ */
 export async function getUserPolls() {
   const supabase = await createClient();
   const {
@@ -96,11 +115,15 @@ export async function getUserPolls() {
   return { polls: data ?? [], error: null };
 }
 
-// GET POLL BY ID
+/**
+ * Retrieves a specific poll by its ID with UUID validation
+ * @param id - The UUID of the poll to retrieve
+ * @returns Promise resolving to poll data and error status
+ */
 export async function getPollById(id: string) {
   const supabase = await createClient();
   
-  // Validate ID format (basic UUID validation)
+  // Validate ID format using UUID v4 regex to prevent injection attacks
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!uuidRegex.test(id)) {
     return { poll: null, error: "Invalid poll ID format" };
@@ -116,17 +139,23 @@ export async function getPollById(id: string) {
   return { poll: data, error: null };
 }
 
-// SUBMIT VOTE
+/**
+ * Submits a vote for a specific poll option with comprehensive validation
+ * Prevents duplicate votes for authenticated users and validates poll/option existence
+ * @param pollId - The UUID of the poll to vote on
+ * @param optionIndex - The index of the selected option (0-based)
+ * @returns Promise resolving to success/error result
+ */
 export async function submitVote(pollId: string, optionIndex: number) {
   const supabase = await createClient();
   
-  // Validate poll ID format
+  // Validate poll ID format using UUID v4 regex to prevent injection attacks
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!uuidRegex.test(pollId)) {
     return { error: "Invalid poll ID format" };
   }
 
-  // Validate option index
+  // Validate option index to prevent array bounds attacks
   if (typeof optionIndex !== 'number' || optionIndex < 0 || optionIndex > 9) {
     return { error: "Invalid option index" };
   }
@@ -135,7 +164,7 @@ export async function submitVote(pollId: string, optionIndex: number) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // Check if poll exists and get options count
+  // Verify poll exists and get options count to validate option index
   const { data: poll, error: pollError } = await supabase
     .from("polls")
     .select("options")
@@ -146,11 +175,12 @@ export async function submitVote(pollId: string, optionIndex: number) {
     return { error: "Poll not found" };
   }
 
+  // Ensure option index is within valid range for this specific poll
   if (optionIndex >= poll.options.length) {
     return { error: "Invalid option index for this poll" };
   }
 
-  // Check if user has already voted (if logged in)
+  // Prevent duplicate votes for authenticated users (anonymous users can vote multiple times)
   if (user) {
     const { data: existingVote } = await supabase
       .from("votes")
@@ -176,7 +206,12 @@ export async function submitVote(pollId: string, optionIndex: number) {
   return { error: null };
 }
 
-// DELETE POLL
+/**
+ * Deletes a poll with ownership verification for security
+ * Only allows users to delete their own polls
+ * @param id - The UUID of the poll to delete
+ * @returns Promise resolving to success/error result
+ */
 export async function deletePoll(id: string) {
   const supabase = await createClient();
   
@@ -194,7 +229,7 @@ export async function deletePoll(id: string) {
     return { error: "You must be logged in to delete a poll." };
   }
 
-  // Only allow deleting polls owned by the user
+  // Enforce ownership verification - only allow deleting polls owned by the current user
   const { error } = await supabase
     .from("polls")
     .delete()
@@ -206,7 +241,13 @@ export async function deletePoll(id: string) {
   return { error: null };
 }
 
-// UPDATE POLL
+/**
+ * Updates an existing poll with ownership verification and input validation
+ * Only allows users to update their own polls
+ * @param pollId - The UUID of the poll to update
+ * @param formData - Form data containing updated poll question and options
+ * @returns Promise resolving to success/error result
+ */
 export async function updatePoll(pollId: string, formData: FormData) {
   const supabase = await createClient();
 
@@ -231,7 +272,7 @@ export async function updatePoll(pollId: string, formData: FormData) {
     return { error: "You must be logged in to update a poll." };
   }
 
-  // Only allow updating polls owned by the user
+  // Enforce ownership verification - only allow updating polls owned by the current user
   const { error } = await supabase
     .from("polls")
     .update({ question, options })
